@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profit Calculator (v3)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; padding: 20px; background: #f5f7fa; color: #333; }
+  h2 { margin-bottom: 18px; color: #2c3e50; }
+  .card { background: #fff; border-radius: 8px; padding: 18px 20px; margin-bottom: 18px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+  .card h3 { margin-bottom: 12px; font-size: 15px; color: #555; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+  label { font-size: 13px; color: #666; display: block; margin-bottom: 4px; }
+  input[type="file"], input[type="date"], input[type="number"], input[type="text"] { padding: 8px 10px; border: 1px solid #ccc; border-radius: 5px; font-size: 14px; width: 100%; max-width: 320px; margin-bottom: 12px; }
+
+  .fy-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; margin-bottom: 14px; }
+  .fy-box { border: 1px solid #ddd; border-radius: 6px; padding: 12px; background: #f9f9f9; }
+  .fy-box label { font-weight: bold; color: #2c3e50; margin-bottom: 6px; }
+  .fy-box input[type="number"] { max-width: 100px; }
+  .fy-box button { margin-left: 8px; }
+
+  .btn { padding: 9px 18px; border: none; border-radius: 5px; cursor: pointer; font-size: 14px; margin-right: 8px; }
+  .btn-primary { background: #3498db; color: #fff; }
+  .btn-primary:hover { background: #2980b9; }
+  .btn-success { background: #27ae60; color: #fff; }
+  .btn-success:hover { background: #219150; }
+  .btn-secondary { background: #7f8c8d; color: #fff; }
+  .btn-secondary:hover { background: #6c7a7b; }
+  .btn-small { padding: 5px 10px; font-size: 12px; background: #e74c3c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  .btn-add { padding: 6px 14px; font-size: 12px; background: #8e44ad; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-top: 6px; }
+  .btn-mini { padding: 4px 8px; font-size: 11px; border: 1px solid #ccc; background: #fff; border-radius: 4px; cursor: pointer; margin-right: 6px; }
+  .btn-mini:hover { background: #f0f0f0; }
+  .btn-remove { padding: 3px 9px; font-size: 12px; background: #e74c3c; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  .btn-remove:hover { background: #c0392b; }
+
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 13px; }
+  th, td { border: 1px solid #ddd; padding: 7px 9px; text-align: center; }
+  th { background: #2c3e50; color: #fff; position: sticky; top: 0; z-index: 1; }
+  tr:nth-child(even) td { background: #f9f9f9; }
+  .total-row td { background: #d5e8d4 !important; font-weight: bold; }
+  .excluded-row td { opacity: 0.4; text-decoration: line-through; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; color: #fff; white-space: nowrap; }
+  .badge-credit { background: #27ae60; }
+  .badge-debit { background: #e74c3c; }
+  .badge-opening { background: #2980b9; }
+
+  .info-box { background: #eaf4fb; border-left: 4px solid #3498db; padding: 10px 14px; border-radius: 4px; font-size: 13px; margin-bottom: 14px; color: #2c3e50; line-height: 1.6; }
+  .success-box { background: #eafaf1; border-left: 4px solid #27ae60; padding: 10px 14px; border-radius: 4px; font-size: 13px; color: #1a5c38; margin-bottom: 10px; }
+  .error-box { background: #fdecea; border-left: 4px solid #e74c3c; padding: 10px 14px; border-radius: 4px; font-size: 13px; color: #7b241c; margin-bottom: 10px; }
+  .warn-box { background: #fff8e1; border-left: 4px solid #f39c12; padding: 10px 14px; border-radius: 4px; font-size: 13px; color: #7d5a00; margin-bottom: 10px; }
+
+  #txnTableWrap { max-height: 420px; overflow: auto; margin-top: 8px; border: 1px solid #eee; border-radius: 4px; }
+  #txnTableWrap table { font-size: 12px; }
+  .filter-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 10px; }
+  .filter-row input[type="text"] { margin-bottom: 0; }
+</style>
+</head>
+<body>
+
+<h2>💰 Profit Calculator (Bank Statement)</h2>
+
+<!-- Financial Year Rates -->
+<div class="card">
+  <h3>📅 Financial Year Profit Percentages</h3>
+  <div class="info-box">
+    Set profit % for each Financial Year. <b>FY 2024-25</b> = Apr 2024 to Mar 2025
+  </div>
+  <div class="fy-grid" id="fyRatesContainer"></div>
+  <button class="btn-add" onclick="addNextFY()">+ Add Financial Year</button>
+</div>
+
+<!-- Bank Statement Upload -->
+<div class="card">
+  <h3>📊 Bank Statement Input</h3>
+  <div class="info-box">
+    Upload your bank statement Excel file (with Date, Debit, Credit, Balance columns).<br>
+    <b>Opening Balance</b> row is picked up automatically — the balance already sitting in the account
+    earns profit too. Any <b>Debit</b> (e.g. matured amount transferred out) reduces the account's real
+    balance from that date onward, and profit from then on is calculated on the <b>actual balance left in
+    the account</b> (taken straight from your statement's own Balance column) — not on the raw debit
+    amount. Untick or remove any row below if you don't want it included.
+  </div>
+  <label>Customer Name:</label>
+  <input type="text" id="customerName" placeholder="e.g. Rahul Sharma">
+
+  <label>Upload Bank Statement (.xlsx / .xls):</label>
+  <input type="file" id="excelFile" accept=".xlsx,.xls">
+  <div id="excelStatus"></div>
+  <div id="accountInfo"></div>
+
+  <div id="txnControls" style="display:none">
+    <div class="filter-row">
+      <div style="flex:1;min-width:200px">
+        <label>Quick check/uncheck by narration keyword:</label>
+        <input type="text" id="quickFilter" placeholder="e.g. Coll. Trf.">
+      </div>
+      <button class="btn-mini" onclick="quickCheck(true)">✔ Check matching</button>
+      <button class="btn-mini" onclick="quickCheck(false)">✕ Uncheck matching</button>
+      <button class="btn-mini" onclick="checkAll(true)">Select All</button>
+      <button class="btn-mini" onclick="checkAll(false)">Deselect All</button>
+    </div>
+    <div id="txnTableWrap"></div>
+
+    <div class="warn-box" style="margin-top:10px">
+      ⚠ Note: the balance remaining after a withdrawal (like the ₹2,000 left after a matured-amount
+      transfer) is <b>already included automatically</b> when you click Calculate — you'll see it as its
+      own Credit-style row there. Only add a manual entry below if you need to correct something the
+      statement itself doesn't show — adding the same amount again here will double-count it.
+    </div>
+    <div class="filter-row" style="margin-top:10px;align-items:flex-end">
+      <div style="min-width:130px">
+        <label>Date</label>
+        <input type="date" id="manualDate" style="max-width:none;margin-bottom:0">
+      </div>
+      <div style="min-width:110px">
+        <label>Type</label>
+        <select id="manualType" style="padding:8px 10px;border:1px solid #ccc;border-radius:5px;font-size:14px;width:100%">
+          <option value="Credit">Credit</option>
+          <option value="Debit">Debit</option>
+        </select>
+      </div>
+      <div style="min-width:120px">
+        <label>Amount</label>
+        <input type="number" id="manualAmount" min="0" step="0.01" style="max-width:none;margin-bottom:0">
+      </div>
+      <div style="flex:1;min-width:180px">
+        <label>Narration (optional)</label>
+        <input type="text" id="manualNarration" placeholder="e.g. Manual correction" style="max-width:none;margin-bottom:0">
+      </div>
+      <button class="btn-mini" onclick="addManualRow()" style="padding:9px 14px">+ Add Entry</button>
+    </div>
+  </div>
+
+  <label style="margin-top:12px">Closing Date (for calculating days):</label>
+  <input type="date" id="closingDate">
+</div>
+
+<!-- Action Buttons -->
+<div class="card">
+  <button class="btn btn-primary" onclick="calculate()">▶ Calculate Profit</button>
+  <button class="btn btn-success" onclick="exportExcel()">⬇ Export Excel</button>
+</div>
+
+<!-- Results -->
+<div class="card" id="resultCard" style="display:none">
+  <h3>Results</h3>
+  <div id="result"></div>
+</div>
+
+<script>
+let statementData = [];   // every parsed transaction row: {id,date,type,amount,sign,narration,included,balance}
+let resultData = [];
+let accountName = '';
+let accountNumber = '';
+let totalsForExport = null;
+let nextRowId = 1;
+
+// ── FY helpers ─────────────────────────────────────────────────────────────
+function getFY(date) {
+  return date.getMonth() < 3 ? date.getFullYear() - 1 : date.getFullYear();
+}
+
+function fyLabel(fy) {
+  return 'FY ' + fy + '-' + String(fy + 1).slice(-2);
+}
+
+function initYearRates() {
+  let curFY = getFY(new Date());
+  [
+    { fy: curFY - 2, rate: 7 },
+    { fy: curFY - 1, rate: 7.5 },
+    { fy: curFY,     rate: 8 },
+    { fy: curFY + 1, rate: 8 },
+  ].forEach(d => addFYRow(d.fy, d.rate));
+}
+
+function addFYRow(fy, rate) {
+  let c = document.getElementById('fyRatesContainer');
+  let r = document.createElement('div');
+  r.className = 'fy-box'; r.dataset.fy = fy;
+  r.innerHTML =
+    '<label>' + fyLabel(fy) + '</label>' +
+    '<div style="font-size:11px;color:#888;margin-bottom:8px">(Apr ' + fy + ' - Mar ' + (fy+1) + ')</div>' +
+    '<div style="display:flex;align-items:center;gap:6px">' +
+      '<label style="margin:0;min-width:50px;color:#555">Rate %:</label>' +
+      '<input type="number" class="yr-rate" value="' + rate + '" min="0" max="100" step="0.01" style="max-width:80px;margin:0">' +
+      '<button class="btn-small" onclick="this.closest(\'.fy-box\').remove()" style="margin:0;padding:5px 8px">✕</button>' +
+    '</div>';
+  c.appendChild(r);
+}
+
+function addNextFY() {
+  let rows = document.querySelectorAll('.fy-box');
+  let nextFY = getFY(new Date());
+  if (rows.length > 0) nextFY = parseInt(rows[rows.length-1].dataset.fy) + 1;
+  addFYRow(nextFY, 8);
+}
+
+function getFYRateMap() {
+  let map = {};
+  document.querySelectorAll('.fy-box').forEach(r => {
+    let fy = parseInt(r.dataset.fy);
+    let rt = parseFloat(r.querySelector('.yr-rate').value);
+    if (!isNaN(fy) && !isNaN(rt)) map[fy] = rt;
+  });
+  return map;
+}
+
+// ── Parse helpers ──────────────────────────────────────────────────────────
+function parseDate(val) {
+  if (!val) return null;
+  if (typeof val === 'number') {
+    let d = new Date((val - 25569) * 86400 * 1000);
+    return isNaN(d.getTime()) ? null : d;
+  }
+  let s = String(val).trim();
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (m) {
+    let yr = parseInt(m[3]); if (yr < 100) yr += 2000;
+    let d = new Date(yr, parseInt(m[2]) - 1, parseInt(m[1]));
+    return isNaN(d.getTime()) ? null : d;
+  }
+  let d2 = new Date(s);
+  return isNaN(d2.getTime()) ? null : d2;
+}
+
+function parseAmount(val) {
+  if (val === undefined || val === null || val === '') return NaN;
+  if (typeof val === 'number') return val;
+  let n = Number(String(val).replace(/[^0-9.\-]/g, ''));
+  return n;
+}
+
+// ── Excel loader ───────────────────────────────────────────────────────────
+// Many bank/co-op statements downloaded as ".xls" are actually HTML tables in disguise.
+// When those go through SheetJS's date auto-detection, ambiguous dates (day<=12) get
+// silently read in MM/DD order instead of the correct DD/MM order used by Indian banks.
+// To avoid that entirely, we detect HTML-based statements and parse them ourselves as
+// plain text, so every date is read as DD/MM/YYYY with no auto-conversion involved.
+
+function extractAccountInfo(text) {
+  let m = text.match(/AccNo\s*:\s*([^\s<]+)[\s\S]{0,40}?AccName\s*:\s*([^<]+)/i);
+  if (m) return { accNo: m[1].trim(), accName: m[2].replace(/\.+\s*$/,'').trim() };
+  return { accNo: '', accName: '' };
+}
+
+function parseHtmlStatement(text) {
+  let rowMatches = [...text.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)];
+  let rows = rowMatches.map(rm => {
+    let cellMatches = [...rm[1].matchAll(/<t[hd][^>]*>([\s\S]*?)<\/t[hd]>/gi)];
+    return cellMatches.map(cm => cm[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, '').trim());
+  }).filter(r => r.length > 0);
+  return rows;
+}
+
+function findHeaderAndBuild(rows) {
+  statementData = [];
+  nextRowId = 1;
+  let headerRowIdx = -1;
+  let colMap = {};
+
+  for (let i = 0; i < rows.length; i++) {
+    let cells = rows[i].map(x => String(x).toLowerCase().trim());
+    let hasDate = cells.findIndex(c => c.includes('date'));
+    let hasCredit = cells.findIndex(c => c.includes('credit'));
+    let hasDebit = cells.findIndex(c => c.includes('debit'));
+    let hasBalance = cells.findIndex(c => c.includes('balance'));
+    let hasNarr = cells.findIndex(c => c.includes('narration') || c.includes('description') || c.includes('particular'));
+
+    if (hasDate !== -1 && (hasCredit !== -1 || hasDebit !== -1)) {
+      headerRowIdx = i;
+      colMap.date = hasDate;
+      colMap.credit = hasCredit;
+      colMap.debit = hasDebit;
+      colMap.balance = hasBalance;
+      colMap.narr = hasNarr;
+      break;
+    }
+  }
+
+  if (headerRowIdx === -1) return false;
+
+  for (let i = headerRowIdx + 1; i < rows.length; i++) {
+    let row = rows[i];
+    let dateVal = row[colMap.date];
+    let d = parseDate(dateVal);
+    if (!d) continue;
+
+    let credit = colMap.credit !== -1 ? parseAmount(row[colMap.credit]) : NaN;
+    let debit = colMap.debit !== -1 ? parseAmount(row[colMap.debit]) : NaN;
+    let balance = colMap.balance !== -1 ? parseAmount(row[colMap.balance]) : NaN;
+    let narration = colMap.narr !== -1 && colMap.narr !== undefined ? (row[colMap.narr] || '') : '';
+    let narrLower = String(narration).toLowerCase();
+
+    if (isNaN(credit)) credit = 0;
+    if (isNaN(debit)) debit = 0;
+    let balanceVal = !isNaN(balance) ? balance : null;
+
+    // Opening Balance row: credit & debit are both 0/blank, but there's an
+    // existing balance already sitting in the account before this statement
+    // starts. That money keeps earning profit, so it goes in as a credit
+    // dated on the opening-balance row's own date.
+    if (narrLower.includes('opening balance') || (i === headerRowIdx + 1 && credit === 0 && debit === 0 && !isNaN(balance) && balance > 0)) {
+      if (!isNaN(balance) && balance > 0) {
+        statementData.push({
+          id: nextRowId++, date: d, type: 'Opening', amount: balance, sign: 1,
+          narration: narration || 'Opening Balance', included: true, balance: balanceVal
+        });
+      }
+      continue;
+    }
+
+    if (credit > 0) {
+      statementData.push({
+        id: nextRowId++, date: d, type: 'Credit', amount: credit, sign: 1,
+        narration: narration, included: true, balance: balanceVal
+      });
+    } else if (debit > 0) {
+      // A withdrawal / transfer-out. The real balance that remains (taken
+      // straight from the statement's own Balance column) is what earns
+      // profit from this date forward — that's what makes the leftover
+      // balance after a matured-amount withdrawal come out correct.
+      statementData.push({
+        id: nextRowId++, date: d, type: 'Debit', amount: debit, sign: -1,
+        narration: narration, included: true, balance: balanceVal
+      });
+    }
+  }
+  return true;
+}
+
+// ── Editable transaction table ──────────────────────────────────────────────
+function renderTxnTable() {
+  if (statementData.length === 0) {
+    document.getElementById('txnControls').style.display = 'none';
+    return;
+  }
+  document.getElementById('txnControls').style.display = 'block';
+
+  let html = '<table><tr><th></th><th>#</th><th>Date</th><th>Type</th><th>Narration</th><th>Amount</th><th>Balance after<br>(per statement)</th><th></th></tr>';
+  statementData.forEach((r, idx) => {
+    let badgeClass = r.type === 'Credit' ? 'badge-credit' : (r.type === 'Debit' ? 'badge-debit' : 'badge-opening');
+    html += '<tr' + (r.included ? '' : ' class="excluded-row"') + '>' +
+      '<td><input type="checkbox" ' + (r.included ? 'checked' : '') + ' onchange="toggleInclude(' + r.id + ')"></td>' +
+      '<td>' + (idx + 1) + '</td>' +
+      '<td>' + r.date.toLocaleDateString('en-GB') + '</td>' +
+      '<td><span class="badge ' + badgeClass + '">' + r.type + '</span></td>' +
+      '<td style="text-align:left">' + (r.narration || '') + '</td>' +
+      '<td>' + (r.sign < 0 ? '-' : '') + r.amount.toLocaleString() + '</td>' +
+      '<td><b>' + (r.balance !== null && r.balance !== undefined ? r.balance.toLocaleString() : '—') + '</b></td>' +
+      '<td><button class="btn-remove" onclick="removeRow(' + r.id + ')">✕</button></td>' +
+    '</tr>';
+  });
+  html += '</table>';
+  document.getElementById('txnTableWrap').innerHTML = html;
+}
+
+function toggleInclude(id) {
+  let row = statementData.find(r => r.id === id);
+  if (row) row.included = !row.included;
+  renderTxnTable();
+}
+
+function removeRow(id) {
+  statementData = statementData.filter(r => r.id !== id);
+  renderTxnTable();
+}
+
+function checkAll(state) {
+  statementData.forEach(r => r.included = state);
+  renderTxnTable();
+}
+
+function quickCheck(state) {
+  let kw = document.getElementById('quickFilter').value.toLowerCase().trim();
+  if (!kw) return;
+  statementData.forEach(r => {
+    if (r.narration.toLowerCase().includes(kw)) r.included = state;
+  });
+  renderTxnTable();
+}
+
+function addManualRow() {
+  let dateText = document.getElementById('manualDate').value;
+  let type = document.getElementById('manualType').value;
+  let amount = parseFloat(document.getElementById('manualAmount').value);
+  let narration = document.getElementById('manualNarration').value.trim();
+
+  if (!dateText) { alert('Pick a date for the manual entry'); return; }
+  if (isNaN(amount) || amount <= 0) { alert('Enter a valid amount'); return; }
+
+  let d = new Date(dateText);
+  statementData.push({
+    id: nextRowId++, date: d, type: type, amount: amount, sign: (type === 'Debit' ? -1 : 1),
+    narration: narration || '(manual entry)', included: true, balance: null
+  });
+  statementData.sort((a, b) => a.date - b.date);
+
+  document.getElementById('manualDate').value = '';
+  document.getElementById('manualAmount').value = '';
+  document.getElementById('manualNarration').value = '';
+
+  renderTxnTable();
+}
+
+function renderLoadResult() {
+  if (statementData.length === 0) {
+    document.getElementById('excelStatus').innerHTML =
+      '<div class="error-box">❌ No transactions found</div>';
+    document.getElementById('accountInfo').innerHTML = '';
+    document.getElementById('txnControls').style.display = 'none';
+    return;
+  }
+
+  let openCount = statementData.filter(r => r.type === 'Opening').length;
+  let creditCount = statementData.filter(r => r.type === 'Credit').length;
+  let debitCount = statementData.filter(r => r.type === 'Debit').length;
+
+  let statusHtml = '<div class="success-box">✅ Loaded <b>' + statementData.length + '</b> rows ' +
+    '(' + openCount + ' opening balance, ' + creditCount + ' credit, ' + debitCount + ' debit) — dates read as DD/MM/YYYY</div>';
+  document.getElementById('excelStatus').innerHTML = statusHtml;
+
+  if (accountName || accountNumber) {
+    document.getElementById('accountInfo').innerHTML =
+      '<div class="info-box"><b>Account Name:</b> ' + (accountName || '—') +
+      '&nbsp;&nbsp;|&nbsp;&nbsp;<b>Account Number:</b> ' + (accountNumber || '—') + '</div>';
+  } else {
+    document.getElementById('accountInfo').innerHTML = '';
+  }
+
+  renderTxnTable();
+}
+
+document.getElementById('excelFile').addEventListener('change', function(e) {
+  let file = e.target.files[0];
+  if (!file) return;
+  accountName = '';
+  accountNumber = '';
+
+  // First, peek at the file as text to see if it's an HTML-based statement.
+  let textReader = new FileReader();
+  textReader.onload = function(evt) {
+    let text = evt.target.result;
+    let looksLikeHtml = /<\s*table[\s>]/i.test(text) || /<\s*html[\s>]/i.test(text) || /<\s*tr[\s>]/i.test(text);
+
+    if (looksLikeHtml) {
+      let info = extractAccountInfo(text);
+      accountName = info.accName;
+      accountNumber = info.accNo;
+      let rows = parseHtmlStatement(text);
+      let ok = findHeaderAndBuild(rows);
+      if (!ok) {
+        document.getElementById('excelStatus').innerHTML =
+          '<div class="error-box">❌ Could not find header with Date and Credit/Debit columns</div>';
+        return;
+      }
+      renderLoadResult();
+    } else {
+      // Genuine binary Excel file - parse via SheetJS as array buffer.
+      let binReader = new FileReader();
+      binReader.onload = function(evt2) {
+        let data = new Uint8Array(evt2.target.result);
+        let wb = XLSX.read(data, { type: 'array' });
+        let sheet = wb.Sheets[wb.SheetNames[0]];
+        // raw:false forces SheetJS to give us the *displayed* text for each cell
+        // (using the cell's own number format) instead of guessing at date order.
+        let rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false });
+        let ok = findHeaderAndBuild(rows);
+        if (!ok) {
+          document.getElementById('excelStatus').innerHTML =
+            '<div class="error-box">❌ Could not find header with Date and Credit/Debit columns</div>';
+          return;
+        }
+        renderLoadResult();
+      };
+      binReader.readAsArrayBuffer(file);
+    }
+  };
+  textReader.readAsText(file);
+});
+
+// ── Calculate ──────────────────────────────────────────────────────────────
+// Every Credit (or the Opening Balance) opens its own "layer" of money that
+// keeps earning profit, independently, all the way to the closing date —
+// UNLESS a later Debit withdraws it first. A Debit consumes the oldest
+// still-open layers first (FIFO): the consumed portion stops earning as of
+// the debit's date, and any leftover portion of a partially-consumed layer
+// keeps going from the debit's date onward. This is exactly how a matured
+// amount transferred out still leaves a real, profit-earning balance behind.
+// Each layer is settled with ONE formula: amount * rate% / 365 * days — no
+// splitting — using the rate for the Financial Year the layer's own start
+// date falls in.
+
+function calculate() {
+  let closingDateText = document.getElementById('closingDate').value;
+  if (!closingDateText) { alert('Select Closing Date'); return; }
+  if (statementData.length === 0) { alert('Upload bank statement first'); return; }
+
+  let closingDate = new Date(closingDateText);
+  let fyRateMap = getFYRateMap();
+
+  if (Object.keys(fyRateMap).length === 0) { alert('Add at least one FY rate'); return; }
+
+  let included = statementData.filter(r => r.included && r.date < closingDate)
+                               .sort((a, b) => a.date - b.date);
+
+  if (included.length === 0) {
+    document.getElementById('result').innerHTML =
+      '<div class="error-box">❌ No transactions were included in the calculation. Check your row selections and closing date.</div>';
+    document.getElementById('resultCard').style.display = 'block';
+    return;
+  }
+
+  resultData = [];
+  let totalProfit = 0;
+  let skippedNoRate = 0;
+  let overWithdrawnWarning = 0;
+  let finalBalance = included[included.length - 1].balance;
+
+  // closedPeriods: {amount, from, to, note, badgeType} — one row each,
+  // covering both money that was later withdrawn and money still open
+  // at the closing date (including leftover balance after a withdrawal).
+  let layers = [];
+  let closedPeriods = [];
+
+  included.forEach(row => {
+    if (row.type === 'Debit') {
+      let remaining = row.amount;
+      while (remaining > 0.005 && layers.length > 0) {
+        let layer = layers[0];
+        let consume = Math.min(layer.amount, remaining);
+        closedPeriods.push({
+          amount: consume, from: layer.startDate, to: row.date,
+          note: layer.note, badgeType: layer.badgeType
+        });
+        layer.amount -= consume;
+        remaining -= consume;
+        if (layer.amount <= 0.005) {
+          layers.shift();
+        } else {
+          // Leftover portion of this layer keeps earning from the
+          // withdrawal date onward — this is your remaining balance,
+          // and it counts as a credit going forward.
+          layer.startDate = row.date;
+          layer.note = 'Balance remaining after: ' + (row.narration || 'withdrawal');
+          layer.badgeType = 'Credit';
+        }
+      }
+      if (remaining > 0.005) overWithdrawnWarning++;
+    } else {
+      layers.push({
+        amount: row.amount, startDate: row.date,
+        note: row.type + (row.narration ? ' — ' + row.narration : ''),
+        badgeType: row.type === 'Opening' ? 'Opening' : 'Credit'
+      });
+    }
+  });
+
+  // Any layers still open at the end keep earning until the closing date.
+  layers.forEach(layer => {
+    closedPeriods.push({ amount: layer.amount, from: layer.startDate, to: closingDate, note: layer.note, badgeType: layer.badgeType });
+  });
+
+  let html = '<table><tr><th>From</th><th>To</th><th>Layer</th><th>Amount</th><th>FY</th><th>Days</th><th>Rate %</th><th>Profit</th></tr>';
+
+  closedPeriods.forEach(p => {
+    if (p.to <= p.from) return;
+
+    let fy = getFY(p.from);
+    let rate = fyRateMap[fy];
+    let days = Math.round((p.to - p.from) / 86400000);
+    if (days <= 0) return;
+
+    if (rate === undefined) {
+      skippedNoRate++;
+      return;
+    }
+
+    let profit = parseFloat((p.amount * (rate / 100) / 365 * days).toFixed(2));
+    totalProfit += profit;
+
+    resultData.push({
+      'From': p.from.toLocaleDateString('en-GB'),
+      'To': p.to.toLocaleDateString('en-GB'),
+      'Layer': p.note,
+      'Amount': p.amount,
+      'FY': fyLabel(fy),
+      'Days': days,
+      'Rate %': rate,
+      'Profit': profit.toFixed(2)
+    });
+
+    let badgeClass = p.badgeType === 'Debit' ? 'badge-debit' : (p.badgeType === 'Opening' ? 'badge-opening' : 'badge-credit');
+    html += '<tr>' +
+      '<td>' + p.from.toLocaleDateString('en-GB') + '</td>' +
+      '<td>' + p.to.toLocaleDateString('en-GB') + '</td>' +
+      '<td style="text-align:left"><span class="badge ' + badgeClass + '">' + (p.badgeType || 'Credit') + '</span> ' + p.note + '</td>' +
+      '<td><b>' + p.amount.toLocaleString() + '</b></td>' +
+      '<td>' + fyLabel(fy) + '</td>' +
+      '<td>' + days + '</td>' +
+      '<td>' + rate + '%</td>' +
+      '<td><b>' + profit.toFixed(2) + '</b></td>' +
+    '</tr>';
+  });
+
+  if (resultData.length === 0) {
+    document.getElementById('result').innerHTML =
+      '<div class="error-box">❌ Nothing could be calculated — check that FY rates are set for the years covered by your statement.</div>';
+    document.getElementById('resultCard').style.display = 'block';
+    return;
+  }
+
+  html += '<tr class="total-row"><td colspan="3">TOTAL</td><td>' + (finalBalance !== null && finalBalance !== undefined ? finalBalance.toLocaleString() : '') + '</td><td colspan="3"></td><td>' + totalProfit.toFixed(2) + '</td></tr></table>';
+
+  let topHtml = '<div style="font-size:12px;color:#555;margin-bottom:8px">Profit rows calculated: <b>' + resultData.length + '</b> (one row per amount, from its own date straight through to the closing date)' +
+    (skippedNoRate > 0 ? ' &nbsp;|&nbsp; <span style="color:#e67e22">' + skippedNoRate + ' row(s) skipped (no FY rate set for that year)</span>' : '') +
+    (overWithdrawnWarning > 0 ? ' &nbsp;|&nbsp; <span style="color:#e67e22">⚠ a debit exceeded the money on hand — check your rows</span>' : '') +
+    '</div>';
+
+  document.getElementById('result').innerHTML = topHtml + html;
+  document.getElementById('resultCard').style.display = 'block';
+  document.getElementById('resultCard').scrollIntoView({ behavior: 'smooth' });
+
+  totalsForExport = { totalProfit: totalProfit, finalBalance: finalBalance };
+}
+
+// ── Export (ExcelJS — real borders, fills, number formats) ──────────────────
+async function exportExcel() {
+  if (resultData.length === 0) { alert('Calculate first'); return; }
+
+  let wb = new ExcelJS.Workbook();
+  let ws = wb.addWorksheet('Profit Report');
+
+  const thin = { style: 'thin', color: { argb: 'FFB0B0B0' } };
+  const allBorders = { top: thin, left: thin, bottom: thin, right: thin };
+
+  ws.mergeCells('A1:H1');
+  ws.getCell('A1').value = 'Profit Calculation Report';
+  ws.getCell('A1').font = { size: 15, bold: true, color: { argb: 'FF2C3E50' } };
+  ws.getCell('A1').alignment = { horizontal: 'left' };
+
+  let customerName = (document.getElementById('customerName').value || '').trim();
+
+  ws.getCell('A3').value = 'Customer Name';
+  ws.getCell('B3').value = customerName || '';
+  ws.getCell('A4').value = 'Account Name';
+  ws.getCell('B4').value = accountName || '';
+  ws.getCell('A5').value = 'Account Number';
+  ws.getCell('B5').value = accountNumber || '';
+  ['A3', 'A4', 'A5'].forEach(c => ws.getCell(c).font = { bold: true });
+
+  let headerRowIdx = 7;
+  let headers = ['From', 'To', 'Layer', 'Amount', 'FY', 'Days', 'Rate %', 'Profit'];
+  let headerRow = ws.getRow(headerRowIdx);
+  headers.forEach((h, i) => {
+    let cell = headerRow.getCell(i + 1);
+    cell.value = h;
+    cell.font = { bold: true, color: { argb: 'FFFFFFFF' } };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF2C3E50' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    cell.border = allBorders;
+  });
+  headerRow.height = 20;
+
+  let rIdx = headerRowIdx + 1;
+  resultData.forEach((r, i) => {
+    let row = ws.getRow(rIdx);
+    let vals = [r['From'], r['To'], r['Layer'], r['Amount'], r['FY'], r['Days'], r['Rate %'], parseFloat(r['Profit'])];
+    vals.forEach((v, ci) => {
+      let cell = row.getCell(ci + 1);
+      cell.value = v;
+      cell.border = allBorders;
+      cell.alignment = { horizontal: (ci === 2 ? 'left' : 'center'), vertical: 'middle' };
+      if (ci === 3 || ci === 7) cell.numFmt = '#,##0.00';
+      if (i % 2 === 1) cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF7F9FA' } };
+    });
+    rIdx++;
+  });
+
+  let totalRow = ws.getRow(rIdx);
+  totalRow.getCell(1).value = 'TOTAL';
+  totalRow.getCell(4).value = totalsForExport.finalBalance;
+  totalRow.getCell(4).numFmt = '#,##0.00';
+  totalRow.getCell(8).value = parseFloat(totalsForExport.totalProfit.toFixed(2));
+  totalRow.getCell(8).numFmt = '#,##0.00';
+  for (let c = 1; c <= 8; c++) {
+    let cell = totalRow.getCell(c);
+    cell.border = allBorders;
+    cell.font = { bold: true };
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD5E8D4' } };
+    cell.alignment = { horizontal: 'center', vertical: 'middle' };
+  }
+
+  ws.columns = [
+    { width: 12 }, { width: 12 }, { width: 30 }, { width: 14 }, { width: 12 }, { width: 8 }, { width: 10 }, { width: 14 }
+  ];
+  ws.autoFilter = { from: { row: headerRowIdx, column: 1 }, to: { row: headerRowIdx, column: 8 } };
+  ws.views = [{ state: 'frozen', ySplit: headerRowIdx }];
+
+  let buf = await wb.xlsx.writeBuffer();
+  let blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  let url = URL.createObjectURL(blob);
+  let a = document.createElement('a');
+  a.href = url;
+  a.download = (customerName ? customerName.replace(/[\\/:*?"<>|]/g, '').replace(/\s+/g, '_') + '_' : '') + 'Profit_Report.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+initYearRates();
+</script>
+</body>
+</html>
